@@ -110,6 +110,56 @@ struct rr {
 	type_t main;
 };
 
+// declaring tags for nso formulas
+enum class nso_tag {
+	has_callbacks,
+	has_indexes,
+	is_quantifier_free,
+	is_dnf,
+	is_nnf
+};
+
+// tags for nodes
+template<typename...BAs>
+static std::map<nso<BAs...>, std::set<nso_tag>> tags;
+
+// query tags for a node
+template<typename...BAs>
+std::optional<nso<BAs...>> operator|(const nso<BAs...>& f, const nso_tag& t) {
+	return tags<nso<BAs...>, nso_tag>[f].contains(t)
+		? std::optional<nso<BAs...>>(f)
+		: std::optional<nso<BAs...>>();
+}
+
+template<typename...BAs>
+std::optional<nso<BAs...>> operator|(const std::optional<nso<BAs...>>& f,	const nso_tag& t) {
+	return f ? f.value() | t : std::optional<nso<BAs...>>();
+}
+
+// insert a tag for a node
+template<typename...BAs>
+nso<BAs...> operator+(const nso<BAs...>& f, const nso_tag& t) {
+	return tags<nso<BAs...>, nso_tag>[f].insert(t);
+}
+
+// erase a tag for a node
+template<typename...BAs>
+nso<BAs...> operator-(const nso<BAs...>& f, const nso_tag& t) {
+	return tags<nso<BAs...>, nso_tag>[f].erase(t), f;
+}
+
+// check all tags for a node
+template<typename...BAs>
+nso<BAs...> operator==(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return tags<nso<BAs...>, nso_tag>[f] == ts;
+}
+
+// check all tags for a node
+template<typename...BAs>
+nso<BAs...> operator!=(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return !(tags<nso<BAs...>, nso_tag>[f] == ts);
+}
+
 //
 // predicates and functions related to the tau language
 //
