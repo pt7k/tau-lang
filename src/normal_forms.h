@@ -261,13 +261,15 @@ static auto to_dnf_tau = make_library<BAs...>(
 template<typename... BAs>
 static auto nnf_to_dnf_wff = make_library<BAs...>(
 	WFF_TO_DNF_0
-	+ WFF_TO_DNF_1
+	+ WFF_TO_DNF_1,
+	{ nso_tag::is_dnf_wff }
 );
 
 template<typename... BAs>
 static auto nnf_to_cnf_wff = make_library<BAs...>(
 	WFF_TO_CNF_0
-	+ WFF_TO_CNF_1
+	+ WFF_TO_CNF_1,
+	{ nso_tag::is_cnf_wff }
 );
 
 // This set of rules can blow up due to the interaction between
@@ -309,8 +311,8 @@ static auto simplify_bf = make_library<BAs...>(
 
 template<typename... BAs>
 static auto simplify_bf_more = make_library<BAs...>(
-	BF_ELIM_DOUBLE_NEGATION_0 +
-	BF_DEF_XOR
+	BF_ELIM_DOUBLE_NEGATION_0
+	+ BF_DEF_XOR
 );
 
 template<typename... BAs>

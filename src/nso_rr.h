@@ -88,11 +88,6 @@ using rules = std::vector<rule<node_t>>;
 template <typename node_t>
 using rec_relations = std::vector<rec_relation<node_t>>;
 
-// a library is a set of rules to be applied in the rewriting process of the tau
-// language, the order of the rules is important.
-template <typename node_t>
-using library = rules<node_t>;
-
 // bindings map tau_source constants (strings) into elements of the boolean algebras.
 template<typename... BAs>
 using bindings = std::map<std::string, std::variant<BAs...>>;
@@ -113,10 +108,12 @@ struct rr {
 // declaring tags for nso formulas
 enum class nso_tag {
 	has_callbacks,
-	has_indexes,
+	has_offsets,
 	is_quantifier_free,
-	is_dnf,
-	is_nnf
+	is_dnf_bf,
+	is_dnf_wff,
+	is_cnf_wff,
+	is_cnf_bf,
 };
 
 // tags for nodes
@@ -126,7 +123,7 @@ static std::map<nso<BAs...>, std::set<nso_tag>> tags;
 // query tags for a node
 template<typename...BAs>
 std::optional<nso<BAs...>> operator|(const nso<BAs...>& f, const nso_tag& t) {
-	return tags<nso<BAs...>, nso_tag>[f].contains(t)
+	return tags<BAs...>[f].contains(t)
 		? std::optional<nso<BAs...>>(f)
 		: std::optional<nso<BAs...>>();
 }
@@ -139,26 +136,64 @@ std::optional<nso<BAs...>> operator|(const std::optional<nso<BAs...>>& f,	const 
 // insert a tag for a node
 template<typename...BAs>
 nso<BAs...> operator+(const nso<BAs...>& f, const nso_tag& t) {
-	return tags<nso<BAs...>, nso_tag>[f].insert(t);
+	return tags<BAs...>[f].insert(t), f;
+}
+
+template<typename...BAs>
+nso<BAs...> operator+(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return tags<BAs...>[f].insert(ts.begin(), ts.end()), f;
 }
 
 // erase a tag for a node
 template<typename...BAs>
 nso<BAs...> operator-(const nso<BAs...>& f, const nso_tag& t) {
-	return tags<nso<BAs...>, nso_tag>[f].erase(t), f;
+	return tags<BAs...>[f].erase(t), f;
+}
+
+template<typename...BAs>
+nso<BAs...> operator-(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return tags<BAs...>[f].erase(ts.begin(), ts.end()), f;
 }
 
 // check all tags for a node
 template<typename...BAs>
-nso<BAs...> operator==(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
-	return tags<nso<BAs...>, nso_tag>[f] == ts;
+bool operator==(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return tags<BAs...>[f] == ts;
 }
 
-// check all tags for a node
 template<typename...BAs>
-nso<BAs...> operator!=(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
-	return !(tags<nso<BAs...>, nso_tag>[f] == ts);
+bool operator!=(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return tags<BAs...>[f] != ts;
 }
+
+template<typename...BAs>
+auto operator<=>(const nso<BAs...>& f, const std::set<nso_tag>& ts) {
+	return tags<BAs...>[f] <=> ts;
+}
+
+template<typename...BAs>
+std::ostream& operator<<(std::ostream& os, const std::set<nso_tag>& f) {
+	for (const auto& t: f) {
+			switch(t) {
+				case nso_tag::has_callbacks: os << "has_callbacks"; break;
+				case nso_tag::has_offsets: os << "has_offsets"; break;
+				case nso_tag::is_quantifier_free: os << "is_quantifier_free"; break;
+				case nso_tag::is_dnf_bf: os << "is_dnf_bf"; break;
+				case nso_tag::is_dnf_wff: os << "is_dnf_wff"; break;
+				case nso_tag::is_cnf_wff: os << "is_cnf_wff"; break;
+				case nso_tag::is_cnf_bf: os << "is_cnf_bf"; break;
+			}
+		os << " ";
+	}
+	return os;
+}
+
+// a library is a set of rules to be applied in the rewriting process of the tau
+// language, the order of the rules is important.
+template <typename node_t>
+struct library : public rules<node_t> {
+	std::set<nso_tag> additions;
+};
 
 //
 // predicates and functions related to the tau language
@@ -968,17 +1003,18 @@ sp_tau_node<BAs...> make_tau_code(sp_tau_source_node& tau_source) {
 // make a library from the given tau source.
 // TODO (LOW) should depend on node_t instead of BAs...
 template<typename... BAs>
-library<nso<BAs...>> make_library(sp_tau_source_node& tau_source) {
+library<nso<BAs...>> make_library(sp_tau_source_node& tau_source, const std::set<nso_tag>& additions = {}) {
 	auto lib = make_tau_code<BAs...>(tau_source);
-	return make_rules(lib);
+	auto rs = make_rules(lib);
+	return { rs, additions};
 }
 
 // make a library from the given tau source string.
 // TODO (LOW) should depend on node_t instead of BAs...
 template<typename... BAs>
-library<nso<BAs...>> make_library(const std::string& source) {
+library<nso<BAs...>> make_library(const std::string& source, const std::set<nso_tag>& additions = {}) {
 	auto tau_source = make_tau_source(source);
-	return make_library<BAs...>(tau_source);
+	return make_library<BAs...>(tau_source, additions);
 }
 
 // make a nso_rr from the given tau source and binder.
@@ -1100,7 +1136,6 @@ struct rr_type {
 	bool fp = false;
 };
 using rr_types = std::unordered_map<std::string, rr_type>;
-
 
 static auto type2str = [](const tau_parser::nonterminal& t) {
 	return tau_parser::instance().name(t);

@@ -37,8 +37,15 @@ template<typename... BAs>
 struct step {
 	step(library<nso<BAs...>> lib): lib(lib) {}
 
+	step(rules<nso<BAs...>> rs) {
+		lib.insert(lib.end(), rs.begin(), rs.end());
+	}
+
 	nso<BAs...> operator()(const nso<BAs...>& n) const {
-		return nso_rr_apply(lib, n);
+		if (!lib.additions.empty() && n >= lib.additions) return n;
+		auto result = nso_rr_apply(lib, n);
+		if (result != n) return result;
+		return n + lib.additions;
 	}
 
 	library<nso<BAs...>> lib;
