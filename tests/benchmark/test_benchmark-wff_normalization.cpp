@@ -11,7 +11,6 @@
 // Contact ohad@idni.org for requesting a permission. This license may be
 // modified over time by the Author.
 
-#include <chrono>
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/expressions.hpp>
@@ -24,7 +23,7 @@
 #include "bool_ba.h"
 #include "bdd_handle.h"
 #include "normalizer.h"
-#include "benchmarking.h"
+#include "measure.h"
 
 #include "../integration/test_integration_helpers-tau.h"
 
@@ -33,11 +32,7 @@ using namespace idni;
 using namespace idni::rewriter;
 using namespace idni::tau;
 
-using std::chrono::high_resolution_clock;
-using std::chrono::duration_cast;
-using std::chrono::duration;
-using std::chrono::milliseconds;
-
+static const char* luccas_sample_label = "Lucca's example";
 static const char* luccas_sample =
 	"ex a ex b ex c ex d ex f ex e (ax + bx' = cy + dy'"
 	"|| ax + bx' != ey + fy') <-> (ax + bx' = cy + gy').";
@@ -48,18 +43,35 @@ static const char* luccas_sample =
 //	"h(x,y)!=0)) && !(all y0 all y1 all z0 all z1 ex x"
 //	"f(x,y1x+y0'x)=0 && (g(x,y1x+y0'x)!=0 && h(x,y1x+y0'x)=0))";
 
-int execute_benchmark(const char* sample) {
-	#ifdef TAU_MEASURE
-	benchmarking::counters["rule_applications"] = 0;
-	#endif // TAU_MEASURE
+int execute_benchmark(const char* label, const char* sample) {
+	// removing all measures
+	measures::remove_all<nso<tau_ba<bdd_test>, bdd_test>>();
 	// benchmarking the normalization of a tau formula
-	auto start = high_resolution_clock::now();
+	measures::start_timer("tau_normalization");
 	normalize_test_tau(sample);
-	auto end = high_resolution_clock::now();
-	// getting number of milliseconds as an integer
-	auto duration = duration_cast<milliseconds>(end - start);
-	int duration_in_ms = static_cast<int>(duration.count());
-	return duration_in_ms;
+	// measures::stop_timer("tau_normalization");
+    std::cout << label << " (time): " << measures::get_timer("tau_normalization") << " ms\n";
+	std::cout << "------------------------------------------------------------------------------------------\n";
+	std::cout << label << " (counters): ";
+	#ifdef TAU_MEASURE
+	if (measures::rule_counters<nso<tau_ba<bdd_test>, bdd_test>>.empty()) {
+		std::cout << "n/a\n";
+	} else {
+		std::cout << "\n\n";
+		using rules_counters = vector<std::pair<rule<nso<tau_ba<bdd_test>, bdd_test>>, size_t>>;
+		rules_counters counters(measures::rule_counters<nso<tau_ba<bdd_test>, bdd_test>>.begin(),
+			measures::rule_counters<nso<tau_ba<bdd_test>, bdd_test>>.end());
+		int width = std::floor(std::log10(counters[0].second)) + 1;
+		std::sort(counters.begin(), counters.end(),	[](auto a, auto b) { return a.second > b.second; });
+		for (auto [rule, counter] : counters)
+			std::cout << std::setw(width) << counter << " " << rule.first << ":=" << rule.second << "\n";
+	}
+	#else
+	std::cout << "n/a\n";
+	#endif // TAU_MEASURE
+	std::cout << "------------------------------------------------------------------------------------------\n";
+	std::cout << "Tau git commit: " << GIT_COMMIT_HASH << "\n";
+	return measures::get_timer("tau_normalization");
 }
 
 int main(int, char**) {
@@ -69,23 +81,7 @@ int main(int, char**) {
 
 	// output information
 	std::cout << "Benchmarking wff normalization\n\n";
-	std::cout << "Sample Name \t\t\tTime (ms)\tRule applications\n";
-	std::cout << "------------------------------------------------------------------------------------------\n";
-    std::cout << "Lucca's example\t\t\t" << execute_benchmark(luccas_sample) << " ms\t\t";
-	#ifdef TAU_MEASURE
-	std::cout << benchmarking::counters["rule_applications"] << "\n";
-	#else
-	std::cout << "n/a\n";
-	#endif // TAU_MEASURE
-    // TODO (LOW) check why it fails here with syntyax error but works in the REPL
-	// std::cout << "Ohad's example\t\t" << execute_benchmark(ohads_sample) << " ms\n";
-	// #ifdef TAU_MEASURE
-	// std::cout << benchmarking::counters["rule_applications"] << "\n";
-	// #elseif
-	// std::cout << "n/a\n";
-	// #endif // TAU_MEASURE
-	std::cout << "------------------------------------------------------------------------------------------\n";
-	std::cout << "Tau git commit: " << GIT_COMMIT_HASH << "\n";
+	execute_benchmark(luccas_sample_label, luccas_sample);
 }
 
 // main method
