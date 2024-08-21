@@ -11,7 +11,7 @@
 // Contact ohad@idni.org for requesting a permission. This license may be
 // modified over time by the Author.
 
-#ifdef TAU_BENCHMARK
+#ifdef TAU_MEASURE
 
 #define BNCHMRK(x) x
 
@@ -30,4 +30,4 @@ namespace idni::tau::benchmarking {
 
 #else
 #define BNCHMRK(x)
-#endif // TAU_BENCHMARK
+#endif // TAU_MEASURE

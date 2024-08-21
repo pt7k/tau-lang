@@ -49,9 +49,9 @@ static const char* luccas_sample =
 //	"f(x,y1x+y0'x)=0 && (g(x,y1x+y0'x)!=0 && h(x,y1x+y0'x)=0))";
 
 int execute_benchmark(const char* sample) {
-	#ifdef TAU_BENCHMARK
+	#ifdef TAU_MEASURE
 	benchmarking::counters["rule_applications"] = 0;
-	#endif // TAU_BENCHMARK
+	#endif // TAU_MEASURE
 	// benchmarking the normalization of a tau formula
 	auto start = high_resolution_clock::now();
 	normalize_test_tau(sample);
@@ -72,18 +72,18 @@ int main(int, char**) {
 	std::cout << "Sample Name \t\t\tTime (ms)\tRule applications\n";
 	std::cout << "------------------------------------------------------------------------------------------\n";
     std::cout << "Lucca's example\t\t\t" << execute_benchmark(luccas_sample) << " ms\t\t";
-	#ifdef TAU_BENCHMARK
+	#ifdef TAU_MEASURE
 	std::cout << benchmarking::counters["rule_applications"] << "\n";
 	#else
 	std::cout << "n/a\n";
-	#endif // TAU_BENCHMARK
+	#endif // TAU_MEASURE
     // TODO (LOW) check why it fails here with syntyax error but works in the REPL
 	// std::cout << "Ohad's example\t\t" << execute_benchmark(ohads_sample) << " ms\n";
-	// #ifdef TAU_BENCHMARK
+	// #ifdef TAU_MEASURE
 	// std::cout << benchmarking::counters["rule_applications"] << "\n";
 	// #elseif
 	// std::cout << "n/a\n";
-	// #endif // TAU_BENCHMARK
+	// #endif // TAU_MEASURE
 	std::cout << "------------------------------------------------------------------------------------------\n";
 	std::cout << "Tau git commit: " << GIT_COMMIT_HASH << "\n";
 }

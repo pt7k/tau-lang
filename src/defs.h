@@ -22,7 +22,6 @@ typedef int sym_t;
 #include <cxxabi.h>
 #else
 #define DBG(x)
-#define TAU_CACHE
 #endif
 
 #include <algorithm>

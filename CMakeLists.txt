@@ -10,6 +10,8 @@ project("${PROJECT_NAME}"
 	DESCRIPTION "IDNI's tau language"
 )
 
+option(TAU_MEASURE                 "Measure performance"                 false)
+option(TAU_CACHE                   "Cache costly computations"           false)
 option(TAU_BUILD_DOC               "Build documentation"                   OFF)
 option(TAU_BUILD_STATIC_LIBRARY    "Build static library"                  OFF)
 option(TAU_BUILD_SHARED_LIBRARY    "Build shared library"                  OFF)
@@ -20,7 +22,7 @@ option(TAU_BUILD_UNIT_TESTS        "Build unit tests"                      OFF)
 option(TAU_BUILD_REPL_TESTS        "Build repl tests"                      OFF)
 option(TAU_BUILD_INTEGRATION       "Build integration tests"               OFF)
 option(TAU_BUILD_REGRESSION        "Build regression tests"                OFF)
-option(TAU_BUILD_BENCHMARK         "Build benchmark tests"                  OFF)
+option(TAU_BUILD_BENCHMARK         "Build benchmark tests"                 OFF)
 option(TAU_GENERATE_PARSERS        "Generates parsers from TGF"            OFF)
 set_property(CACHE TAU_BUILD_DOC               PROPERTY STRINGS "OFF" "ON")
 set_property(CACHE TAU_BUILD_STATIC_LIBRARY    PROPERTY STRINGS "OFF" "ON")
@@ -39,6 +41,7 @@ if(TAU_BUILD_TESTS)
 	set(TAU_BUILD_REPL_TESTS ON)
 	set(TAU_BUILD_INTEGRATION ON)
 	set(TAU_BUILD_REGRESSION ON)
+	set(TAU_BUILD_BENCHMARK ON)
 endif()
 
 if(TAU_BUILD_REPL_TESTS)
@@ -48,18 +51,32 @@ endif()
 if(NOT TAU_BUILD_STATIC_LIBRARY AND NOT TAU_BUILD_SHARED_LIBRARY
 	AND NOT TAU_BUILD_EXECUTABLE AND NOT TAU_BUILD_SHARED_EXECUTABLE
 	AND NOT TAU_BUILD_UNIT_TESTS AND NOT TAU_BUILD_REGRESSION
-	AND NOT TAU_BUILD_INTEGRATION AND NOT TAU_BUILD_REPL_TESTS)
+	AND NOT TAU_BUILD_INTEGRATION AND NOT TAU_BUILD_REPL_TESTS
+	AND NOT TAU_BUILD_BENCHMARK)
 		set(TAU_BUILD_EXECUTABLE ON)
 endif()
 
-# Adjustments according to build type
-if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+# fine tuning definitions according to build type and options
+if(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 	set(TAU_BUILD_BENCHMARK ON)
-	set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -DTAU_BENCHMARK")
+	set(TAU_MEASURE true)
+	set(TAU_CACHE false)
 elseif (CMAKE_BUILD_TYPE STREQUAL "Release")
-	set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -DTAU_CACHE")
+	set(TAU_CACHE true)
 endif()
 
+if(NOT TAU_BUILD_BENCHMARK)
+	set(TAU_MEASURE false)
+endif()
+
+# defining available definitions
+set(TAU_DEFINITIONS
+	TAU_MEASURE
+	TAU_CACHE
+)
+
+message(STATUS "TAU_MEASURE: ${TAU_MEASURE}")
+message(STATUS "TAU_CACHE: ${TAU_CACHE}")
 message(STATUS "TAU_BUILD_STATIC_LIBRARY: ${TAU_BUILD_STATIC_LIBRARY}")
 message(STATUS "TAU_BUILD_SHARED_LIBRARY: ${TAU_BUILD_SHARED_LIBRARY}")
 message(STATUS "TAU_BUILD_EXECUTABLE: ${TAU_BUILD_EXECUTABLE}")
@@ -90,6 +107,9 @@ endif()
 #
 option(BOOST_LOG_TRIVIAL           "Build logging in parser"   ON)
 option(PARSER_BUILD_STATIC_LIBRARY "Build only static library" ON)
+if(TAU_MEASURE)
+	set(PARSER_MEASURE true)
+endif()
 add_subdirectory("external/parser")
 set(IDNI_PARSER_OBJECT_LIB "idni_parsero")
 
