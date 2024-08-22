@@ -43,27 +43,27 @@ TEST_SUITE("allowing unresolved rr's in normalization") {
 		const char* sample = "f[0](x).";
 		auto normalized = normalize_test_tau(sample);
 		std::stringstream ss; ss << normalized;
-		CHECK( ss.str() == "always f[0](x)" );
+		CHECK( ss.str() == "f[0](x)" );
 	}
 
 	TEST_CASE("ex x f[0](x).") {
 		const char* sample = "ex x f[0](x).";
 		auto normalized = normalize_test_tau(sample);
 		std::stringstream ss; ss << normalized;
-		CHECK( ss.str() == "always ex x f[0](x)" );
+		CHECK( ss.str() == "ex x f[0](x)" );
 	}
 
 	TEST_CASE("ex x f[0](x) && x = 0.") {
 		const char* sample = "ex x f[0](x) && x = 0.";
 		auto normalized = normalize_test_tau(sample);
 		std::stringstream ss; ss << normalized;
-		CHECK( ss.str() == "always ex x f[0](x) && x = 0" );
+		CHECK( ss.str() == "ex x f[0](x) && x = 0" );
 	}
 
 	TEST_CASE("ex x f[0](x) && x != 0.") {
 		const char* sample = "ex x f[0](x) && x != 0.";
 		auto normalized = normalize_test_tau(sample);
 		std::stringstream ss; ss << normalized;
-		CHECK( ss.str() == "always ex x f[0](x) && x != 0" );
+		CHECK( ss.str() == "ex x f[0](x) && x != 0" );
 	}
 }

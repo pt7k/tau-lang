@@ -218,6 +218,7 @@ template<typename... BAs>
 static auto nnf_to_dnf_wff = make_library<BAs...>(
 	WFF_TO_DNF_0
 	+ WFF_TO_DNF_1,
+	+ WFF_PUSH_SOMETIMES_INWARDS,
 	{ nso_tag::is_dnf_wff }
 );
 
@@ -334,10 +335,10 @@ static auto elim_trivial_eqs = make_library<BAs...>(
 	+ BF_EQ_SIMPLIFY_1
 	+ BF_NEQ_SIMPLIFY_0
 	+ BF_NEQ_SIMPLIFY_1
-	+ BF_EQ_AND_SIMPLIFY_0
-	+ BF_EQ_AND_SIMPLIFY_1
-	+ BF_EQ_OR_SIMPLIFY_0
-	+ BF_EQ_OR_SIMPLIFY_1
+	// + BF_EQ_AND_SIMPLIFY_0
+	// + BF_EQ_AND_SIMPLIFY_1
+	// + BF_EQ_OR_SIMPLIFY_0
+	// + BF_EQ_OR_SIMPLIFY_1
 );
 
 template<typename... BAs>
@@ -394,6 +395,16 @@ template<typename... BAs>
 static auto unsqueeze_wff = make_library<BAs...>(
 	WFF_UNSQUEEZE_POSITIVES_0
 	+ WFF_UNSQUEEZE_NEGATIVES_0
+);
+
+template<typename... BAs>
+static auto neq_to_eq = make_library<BAs...>(
+	WFF_PUSH_NEGATION_UPWARDS_0
+);
+
+template<typename... BAs>
+static auto eq_to_neq = make_library<BAs...>(
+	WFF_PUSH_NEGATION_INWARDS_2
 );
 
 template<typename... BAs>
@@ -864,84 +875,102 @@ nso<BAs...> nnf_wff(const nso<BAs...>& n) {
 }
 
 // Reduce currrent dnf due to update by coeff and variable assignment i
-inline bool reduce_paths (vector<int_t>& i, vector<vector<int_t>>& paths, int_t p, bool pathes_disjoint, bool surface = true) {
-		for (size_t j=0; j < paths.size(); ++j) {
-			// Get Hamming distance between i and path and position of last difference
-			// while different irrelevant variables make assignments incompatible
-			// If this happens continue checking if the rule c_1...c_jx | c_1...c_jx'd_1...d_n
-			// = c_1...c_jx | c_1...c_jd_1...d_n is applicable
+inline bool reduce_paths (vector<int_t>& i, vector<vector<int_t>>& paths, int_t p, bool surface = true) {
+	// Candidate storage for path joining
+	vector<pair<vector<int_t>*, int_t>> candidates;
+	for (size_t j=0; j < paths.size(); ++j) {
+		// Get Hamming distance between i and path and position of last difference
+		// while different irrelevant variables make assignments incompatible
+		int_t dist = 0, pos = 0;
+		for (int_t k=0; k < p; ++k) {
+			if (i[k] == paths[j][k]) continue;
+			else if (dist == 2) break;
+			else if (i[k] == 2 || paths[j][k] == 2) { dist = 2; break; }
+			else dist += 1, pos = k;
+		}
+		if (dist == 1) {
+			// Remove i from paths if recursion depth is greater 0
+			if(!surface) {
+				paths[j] = {};
+				// Resolve variable
+				i[pos] = 2;
+				if(ranges::all_of(i, [](const auto el) {return el == 2;}))
+					return paths = {}, true;
+				// Continue with resulting assignment
+				reduce_paths(i, paths, p, false);
+			} else {
+				// Resolve variable
+				paths[j][pos] = 2;
+				if(ranges::all_of(paths[j], [](const auto el) {return el == 2;}))
+					return paths = {}, true;
+				// Continue with resulting assignment
+				reduce_paths(paths[j], paths, p, false);
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+inline void join_paths (vector<vector<int_t>>& paths) {
+	for (size_t i=0; i < paths.size(); ++i) {
+		for (size_t j=i+1; j < paths.size(); ++j) {
 			int_t dist = 0, pos = 0;
-			bool hamming_check = true, subset_check = true;
-			bool subset_relation_decided = false, is_i_subset_of_path = true;
-			for (int_t k=0; k < p; ++k) {
-				if (i[k] == paths[j][k]) continue;
-				else if (dist == 2) break;
-				else if (i[k] == 2) {
-					hamming_check = false;
-					if (pathes_disjoint) break;
-					if (!subset_relation_decided) {
-						subset_relation_decided = true;
-						is_i_subset_of_path = true;
-					} else {
-						if (!is_i_subset_of_path) {
-							subset_check = false;
-							break;
-						}
+			bool subset_relation_decided = false, is_i_subset_of_j = true, subset_check = true;
+			for (size_t k=0; k < paths[i].size(); ++k) {
+			if (paths[i][k] == paths[j][k]) continue;
+			else if (dist == 2) break;
+			else if (paths[i][k] == 2) {
+				if (!subset_relation_decided) {
+					subset_relation_decided = true;
+					is_i_subset_of_j = true;
+				} else {
+					if (!is_i_subset_of_j) {
+						subset_check = false;
+						break;
 					}
 				}
-				else if (paths[j][k] == 2) {
-					hamming_check = false;
-					if(pathes_disjoint) break;
-					if (!subset_relation_decided) {
-						subset_relation_decided = true;
-						is_i_subset_of_path = false;
-					} else {
-						if (is_i_subset_of_path) {
-							subset_check = false;
-							break;
-						}
+			}
+			else if (paths[j][k] == 2) {
+				if (!subset_relation_decided) {
+					subset_relation_decided = true;
+					is_i_subset_of_j = false;
+				} else {
+					if (is_i_subset_of_j) {
+						subset_check = false;
+						break;
 					}
 				}
-				else dist += 1, pos = k;
 			}
-			if (hamming_check && dist == 1) {
-				// Remove i from paths if recursion depth is greater 0
-				if(!surface) {
-					paths[j] = {};
-					// Resolve variable
-					i[pos] = 2;
-					if(ranges::all_of(i, [](const auto el) {return el == 2;}))
-						return paths = {}, true;
-					// Continue with resulting assignment
-					reduce_paths(i, paths, p, pathes_disjoint, false);
-				} else {
-					// Resolve variable
-					paths[j][pos] = 2;
-					if(ranges::all_of(paths[j], [](const auto el) {return el == 2;}))
-						return paths = {}, true;
-					// Continue with resulting assignment
-					reduce_paths(paths[j], paths, p, pathes_disjoint, false);
-				}
-				return true;
-			}
-			if (!pathes_disjoint && subset_check && dist == 1) {
-				if (is_i_subset_of_path) {
-					// Resovle variable in paths
-					paths[j][pos] = 2;
-				} else {
-					// Resolve variable in i
-					i[pos] = 2;
-				}
+			else dist += 1, pos = k;
+		}
+		if (subset_check && dist == 1) {
+			if (is_i_subset_of_j) {
+				// Resovle variable in paths
+				paths[j][pos] = 2;
+			} else {
+				// Resolve variable in i
+				paths[i][pos] = 2;
 			}
 		}
-		return false;
+		}
+	}
 }
 
 // Ordering function for variables from nso formula
 template<typename... BAs>
 auto lex_var_comp = [](const auto x, const auto y) {
+#ifdef CACHE
+	static map<pair<nso<BAs...>,nso<BAs...>>, bool> cache;
+	if (auto it = cache.find({x,y}); it != cache.end())
+		return it->second;
+#endif // CACHE
 	auto xx = make_string(tau_node_terminal_extractor<BAs...>, x);
 	auto yy = make_string(tau_node_terminal_extractor<BAs...>, y);
+#ifdef CACHE
+	pair<nso<BAs...>,nso<BAs...>> p (x,y);
+	return cache.emplace(move(p), xx < yy).first->second;
+#endif // CACHE
 	return xx < yy;
 };
 
@@ -965,7 +994,7 @@ void elim_vars_in_assignment (const auto& fm, const auto&vars, auto& i, const in
 
 // Create assignment in formula and reduce resulting clause
 template<typename... BAs>
-bool assign_and_reduce(const nso<BAs...>& fm, const vector<nso<BAs...>>& vars, vector<int_t>& i, auto& dnf, int_t p, bool pathes_disjoint) {
+bool assign_and_reduce(const nso<BAs...>& fm, const vector<nso<BAs...>>& vars, vector<int_t>& i, auto& dnf, int_t p) {
 	// Check if all variables are assigned
 	if((int_t)vars.size() == p) {
 		// Normalize tau subformulas
@@ -983,7 +1012,7 @@ bool assign_and_reduce(const nso<BAs...>& fm, const vector<nso<BAs...>>& vars, v
 
 		auto it = dnf.find(fm_simp);
 		if (it == dnf.end()) return dnf.emplace(fm_simp, vector(p==0?0:1, i)), false;
-		else if (!reduce_paths(i, it->second, p, pathes_disjoint)) {
+		else if (!reduce_paths(i, it->second, p)) {
 			// Place coefficient together with variable assignment if no reduction happend
 			it->second.push_back(i);
 		} else erase_if(it->second, [](const auto& v){return v.empty();});
@@ -991,7 +1020,7 @@ bool assign_and_reduce(const nso<BAs...>& fm, const vector<nso<BAs...>>& vars, v
 	}
 	// variable was already eliminated
 	if (i[p] == 2) {
-		if (assign_and_reduce(fm, vars, i, dnf, p+1, pathes_disjoint)) return true;
+		if (assign_and_reduce(fm, vars, i, dnf, p+1)) return true;
 		i[p] = 0;
 		return false;
 	}
@@ -1007,16 +1036,16 @@ bool assign_and_reduce(const nso<BAs...>& fm, const vector<nso<BAs...>>& vars, v
 	elim_vars_in_assignment<BAs...>(fm_v1, vars, i, p);
 	if(fm_v1 == fm_v0) {
 		i[p] = 2;
-		if (assign_and_reduce(fm_v1, vars, i, dnf, p+1, pathes_disjoint)) return true;
+		if (assign_and_reduce(fm_v1, vars, i, dnf, p+1)) return true;
 		i[p] = 0;
 	} else {
 		i[p] = 1;
-		if (assign_and_reduce(fm_v1, vars, i, dnf, p+1, pathes_disjoint)) return true;
+		if (assign_and_reduce(fm_v1, vars, i, dnf, p+1)) return true;
 		i[p] = 0;
 
 		elim_vars_in_assignment<BAs...>(fm_v0, vars, i, p);
 		i[p] = -1;
-		if (assign_and_reduce(fm_v0, vars, i, dnf, p+1, pathes_disjoint)) return true;
+		if (assign_and_reduce(fm_v0, vars, i, dnf, p+1)) return true;
 		i[p] = 0;
 	}
 	return false;
@@ -1025,7 +1054,7 @@ bool assign_and_reduce(const nso<BAs...>& fm, const vector<nso<BAs...>>& vars, v
 // Given a BF b, calculate the Boole normal form (DNF corresponding to the pathes to true in the BDD) of b
 // where the variable order is given by the function lex_var_comp
 template<typename... BAs>
-nso<BAs...> bf_boole_normal_form (const nso<BAs...>& fm, bool make_pathes_disjoint = false) {
+nso<BAs...> bf_boole_normal_form (const nso<BAs...>& fm, bool make_paths_disjoint = false) {
 	// Function can only be applied to a BF
 	assert(is_non_terminal(tau_parser::bf, fm));
 
@@ -1044,12 +1073,16 @@ nso<BAs...> bf_boole_normal_form (const nso<BAs...>& fm, bool make_pathes_disjoi
 	auto fm_simp = fm | repeat_all<step<BAs...>, BAs...>(
 			simplify_bf<BAs...> | simplify_bf_more<BAs...> | apply_cb<BAs...>);
 
-	if(assign_and_reduce(fm_simp, vars, i, dnf, 0, make_pathes_disjoint)) {
+	if(assign_and_reduce(fm_simp, vars, i, dnf, 0)) {
 		assert(dnf.size() == 1);
 		return dnf.begin()->first;
 	}
 	if(dnf.empty()) return _0<BAs...>;
-
+	if (!make_paths_disjoint) {
+		for (auto& [coeff, paths] : dnf) {
+			join_paths(paths);
+		}
+	}
 	// Convert map structure dnf back to rewrite tree
 	nso<BAs...> reduced_dnf;
 	bool first = true;
@@ -1094,6 +1127,167 @@ struct bf_reduce_canonical {
 };
 template<typename... BAs>
 nso<BAs...> operator|(const nso<BAs...>& fm, const bf_reduce_canonical<BAs...>& r) {
+	return r(fm);
+}
+
+inline bool is_contained_in (const vector<int_t>& i, auto& paths) {
+	// Check if there is a containment of i in any path of paths
+	for (auto& path : paths) {
+		bool is_contained = true, is_i_smaller, containment_dir_known = false;
+		for (int_t k = 0; k < (int_t)i.size(); ++k) {
+			if (i[k] == path[k]) continue;
+			else if (i[k] == 2) {
+				if (containment_dir_known) {
+					if (!is_i_smaller) { is_contained = false; break; }
+				} else {
+					containment_dir_known = true;
+					is_i_smaller = true;
+				}
+			}
+			else if (path[k] == 2) {
+				if (containment_dir_known) {
+					if (is_i_smaller) { is_contained = false; break; }
+				} else {
+					containment_dir_known = true;
+					is_i_smaller = false;
+				}
+			}
+			else if (i[k] != path[k]) { is_contained = false; break; }
+		}
+		if (is_contained) {
+			if (is_i_smaller) {
+				// keep i and delete current path
+				path = {};
+			} else return true;
+		}
+	}
+	return false;
+}
+
+// Assume that fm is in DNF (or CNF -> set is_cnf to true)
+// Note that Boolean equations are not simplified!
+template<typename... BAs>
+nso<BAs...> reduce2_wff (const nso<BAs...>& fm, bool is_cnf = false, bool all_reductions = true) {
+	auto is_var = [](const auto& n) {
+		using tp = tau_parser;
+		assert(!is_non_terminal(tp::bf_neq, n));
+		return is_child_non_terminal(tp::bf_eq, n) || is_child_non_terminal(tp::wff_ref, n) ||
+			 is_child_non_terminal(tp::uninterpreted_constant, n) || is_child_non_terminal(tp::wff_ex, n) ||
+			 	is_child_non_terminal(tp::wff_sometimes, n) || is_child_non_terminal(tp::wff_always, n) ||
+			 		is_child_non_terminal(tp::wff_all, n);
+	};
+	// Pull negation out of equality
+	auto new_fm = fm | repeat_all<step<BAs...>, BAs...>(neq_to_eq<BAs...>);
+	vector<nso<BAs...>> vars = select_top(new_fm, is_var);
+	if (vars.empty()) return fm | repeat_all<step<BAs...>,BAs...>(simplify_wff<BAs...>);
+
+	map<nso<BAs...>, int_t> var_pos;
+	for (int_t k=0; k < (int_t)vars.size(); ++k)
+		var_pos.emplace(vars[k], k);
+
+	vector<vector<int_t>> paths;
+	bool unsat = true;
+	for (const auto& clause : get_leaves(new_fm, is_cnf ? tau_parser::wff_and : tau_parser::wff_or, tau_parser::wff)) {
+		vector<int_t> i (vars.size());
+		for (int_t k = 0; k < (int_t)vars.size(); ++k) i[k] = 2;
+		bool clause_is_unsat = false;
+		auto var_assigner = [&](const nso<BAs...>& n) {
+			if (clause_is_unsat) return false;
+			if (is_non_terminal(tau_parser::wff_f, n)) {
+				clause_is_unsat = true;
+				return false;
+			}
+			if (is_non_terminal(tau_parser::wff_neg, n)) {
+				auto v = trim(n);
+				if (i[var_pos[v]] == 1) {
+					// clause is false
+					clause_is_unsat = true;
+					return false;
+				}
+				i[var_pos[v]] = 0;
+				return false;
+			}
+			if (is_var(n)) {
+				if (i[var_pos[n]] == 0) {
+					// clause is false
+					clause_is_unsat = true;
+					return false;
+				}
+				i[var_pos[n]] = 1;
+				return false;
+			}
+			else return true;
+		};
+		post_order_traverser<identity_t<nso<BAs...>>, decltype(var_assigner), nso<BAs...>>
+			(rewriter::identity<nso<BAs...>>, var_assigner)(clause);
+		if (clause_is_unsat) continue;
+		if (ranges::all_of(i, [](const auto el) {return el == 2;}))
+			return is_cnf ? _F<BAs...> : _T<BAs...>;
+		// There is at least one satisfiable clause
+		unsat = false;
+		if (is_contained_in(i, paths)) continue;
+		if (all_reductions) {
+			if (!reduce_paths(i, paths, vars.size())) paths.emplace_back(move(i));
+			else {
+				erase_if(paths, [](const auto& v){return v.empty();});
+				if (paths.empty())
+					return is_cnf ? _F<BAs...> : _T<BAs...>;
+			}
+		} else paths.emplace_back(move(i));
+	}
+
+	if (paths.empty()) {
+		if (unsat) return is_cnf ? _T<BAs...> : _F<BAs...>;
+		else return is_cnf ? _F<BAs...> : _T<BAs...>;
+	}
+	if (all_reductions) join_paths(paths);
+
+	nso<BAs...> reduced_wff;
+	bool first = true;
+	for (const auto& path : paths) {
+		if (path.empty()) continue;
+        bool first_var = true;
+        nso<BAs...> var_path;
+        for (size_t k=0; k < vars.size(); ++k) {
+            if (path[k] == 2) continue;
+            if (first_var) var_path = path[k] == 1 ? vars[k] :
+                build_wff_neg(vars[k]), first_var = false;
+            else {
+                if (!is_cnf)
+                    var_path = path[k] == 1 ? build_wff_and(var_path, vars[k]) :
+                        build_wff_and(var_path, build_wff_neg(vars[k]));
+                else var_path = path[k] == 1 ? build_wff_or(var_path, vars[k]) :
+                        build_wff_or(var_path, build_wff_neg(vars[k]));
+            }
+        }
+        if (first) reduced_wff = var_path, first = false;
+        else reduced_wff = is_cnf ? build_wff_and(reduced_wff, var_path)
+                            : build_wff_or(reduced_wff, var_path);
+	}
+	return reduced_wff | repeat_all<step<BAs...>, BAs...>(eq_to_neq<BAs...>);
+}
+
+template<typename... BAs>
+struct wff_reduce_dnf {
+	nso<BAs...> operator() (const nso<BAs...>& fm) const {
+		return reduce2_wff(fm);
+	}
+};
+
+template<typename... BAs>
+struct wff_reduce_cnf {
+	nso<BAs...> operator() (const nso<BAs...>& fm) const {
+		return reduce2_wff(fm, true);
+	}
+};
+
+template<typename... BAs>
+nso<BAs...> operator|(const nso<BAs...>& fm, const wff_reduce_dnf<BAs...>& r) {
+	return r(fm);
+}
+
+template<typename... BAs>
+nso<BAs...> operator|(const nso<BAs...>& fm, const wff_reduce_cnf<BAs...>& r) {
 	return r(fm);
 }
 
@@ -1221,10 +1415,10 @@ nso<BAs...> push_sometimes_always_in (nso<BAs...> fm) {
 		// Recursively denest sometimes and always statements contained in sometimes statement st
 		auto flat_st = build_wff_sometimes(push_sometimes_always_in(trim2(st)));
 		// Simplyfy current formula and convert to DNF
+		// Reductions done in order to prevent blow up
 		flat_st = flat_st | repeat_each<step<BAs...>, BAs...>(to_nnf_wff<BAs...>)
 							| repeat_each<step<BAs...>, BAs...>(nnf_to_dnf_wff<BAs...>)
-							| repeat_each<step<BAs...>, BAs...>(simplify_wff<BAs...>)
-							| reduce_wff<BAs...>;
+							| wff_reduce_dnf<BAs...>();
 		if (flat_st != st) g_changes[st] = flat_st;
 	}
 	// Apply changes
@@ -1249,10 +1443,10 @@ nso<BAs...> push_sometimes_always_in (nso<BAs...> fm) {
 		// Recursively denest sometimes and always statements contained in always statement aw
 		auto flat_aw = build_wff_always(push_sometimes_always_in(trim2(aw)));
 		// Simplyfy current formula and convert to CNF
+		// Reductions done in order to prevent blow up
 		flat_aw = flat_aw | repeat_each<step<BAs...>, BAs...>(to_nnf_wff<BAs...>)
 							| repeat_each<step<BAs...>, BAs...>(nnf_to_cnf_wff<BAs...>)
-							| repeat_each<step<BAs...>, BAs...>(simplify_wff<BAs...>)
-							| reduce_wff<BAs...>;
+							| wff_reduce_cnf<BAs...>();
 		if (flat_aw != aw) g_changes[aw] = flat_aw;
 	}
 	// Apply changes
@@ -1312,12 +1506,13 @@ nso<BAs...> pull_always_out(const nso<BAs...>& fm) {
 }
 
 // We assume that there is no nesting of "sometimes" and "always" in fm
+// and that fm is in DNF
 template<typename... BAs>
 nso<BAs...> pull_sometimes_always_out(nso<BAs...> fm) {
-	fm = fm | repeat_all<step<BAs...>, BAs...>(to_dnf_wff<BAs...>);
 	std::map<nso<BAs...>, nso<BAs...>> changes = {};
 	std::vector<nso<BAs...>> collected_no_temp_fms;
-	// Collect all disjuncts which are sometimes statements and call pull_always_out on the others
+	nso<BAs...> pure_always_clause;
+	// Collect all disjuncts which have temporal variables and call pull_always_out on the others
 	auto clauses = get_leaves(fm, tau_parser::wff_or, tau_parser::wff);
 	if(clauses.empty()) clauses.push_back(fm);
 	for (const auto& clause : clauses) {
@@ -1326,7 +1521,12 @@ nso<BAs...> pull_sometimes_always_out(nso<BAs...> fm) {
             changes[clause] = _F<BAs...>;
             collected_no_temp_fms.push_back(r);
         }
-        else if (clause != r) changes[clause] = r;
+        else if (clause != r) {
+        	if (is_child_non_terminal(tau_parser::wff_always, r))
+        		pure_always_clause = trim2(r);
+	        changes[clause] = r;
+        } else if (is_child_non_terminal(tau_parser::wff_always, clause))
+        	pure_always_clause = trim2(clause);
 	}
 	if (!changes.empty()) fm = replace(fm, changes);
     if(!collected_no_temp_fms.empty()) {
@@ -1336,7 +1536,12 @@ nso<BAs...> pull_sometimes_always_out(nso<BAs...> fm) {
             if (first) {first = false; no_temp_fm = f;}
             else no_temp_fm = build_wff_or(no_temp_fm, f);
         }
-        no_temp_fm = build_wff_always(no_temp_fm);
+    	if (pure_always_clause) {
+    		changes = {};
+    		changes[pure_always_clause] = build_wff_or(pure_always_clause, no_temp_fm);
+			return replace(fm, changes);
+    	}
+        //no_temp_fm = build_wff_always(no_temp_fm);
         fm = build_wff_or(fm, no_temp_fm);
 	}
 	return fm;
@@ -1346,14 +1551,29 @@ nso<BAs...> pull_sometimes_always_out(nso<BAs...> fm) {
 template<typename... BAs>
 struct sometimes_always_normalization {
 	nso<BAs...> operator() (const nso<BAs...>& fm) const {
+		auto st_aw = [](const auto& n) {
+			return is_child_non_terminal(tau_parser::wff_sometimes, n) ||
+				is_child_non_terminal(tau_parser::wff_always, n);
+		};
 		auto res = push_sometimes_always_in(fm)
-					| repeat_all<step<BAs...>, BAs...>(simplify_wff<BAs...>)
-					| reduce_wff<BAs...>;
-		return pull_sometimes_always_out(res)
-				| repeat_all<step<BAs...>, BAs...>(simplify_wff<BAs...>)
-				| reduce_wff<BAs...>;
+					// conversion to DNF necessary for pull_sometimes_always_out
+					| repeat_each<step<BAs...>, BAs...>(to_nnf_wff<BAs...>)
+					| repeat_each<step<BAs...>, BAs...>(nnf_to_dnf_wff<BAs...>)
+					// Reduction done to normalize while sometimes/always are pushed in
+					| wff_reduce_dnf<BAs...>();
+		res = pull_sometimes_always_out(res) |
+					repeat_each<step<BAs...>, BAs...>(simplify_wff<BAs...>);
+		auto temp_inner = select_top(res, st_aw);
+		if (temp_inner.empty()) return res;
+		map<nso<BAs...>, nso<BAs...>> changes;
+		for (const auto& f : temp_inner) {
+			// Reduction done to normalize again now that sometimes/always are all the way out
+			changes[trim2(f)] = trim2(f) | wff_reduce_dnf<BAs...>();
+		}
+		return replace(res, changes);
 	}
 };
+
 template<typename... BAs>
 nso<BAs...> operator|(const nso<BAs...>& fm, const sometimes_always_normalization<BAs...>& r) {
 	return r(fm);
