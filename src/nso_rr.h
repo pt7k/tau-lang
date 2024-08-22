@@ -2549,6 +2549,10 @@ sp_tau_node<BAs...> nso_rr_apply(const rule<nso<BAs...>>& r, const sp_tau_node<B
 	auto nn = apply_rule<sp_tau_node<BAs...>, is_capture_t<BAs...>>(r, n, is_capture<BAs...>);
 	std::map<sp_tau_node<BAs...>, sp_tau_node<BAs...>> changes;
 
+	#ifdef TAU_MEASURE
+	if (n != nn) measures::increase_rule_hit<nso<BAs...>>(r);
+	#endif // TAU_MEASURE
+
 	// compute changes from callbacks
 	if (auto cbs = select_all(nn, is_callback<BAs...>); !cbs.empty()) {
 		callback_applier<BAs...> cb_applier;

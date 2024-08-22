@@ -50,9 +50,10 @@ int execute_benchmark(const char* label, const char* sample) {
 	measures::start_timer("tau_normalization");
 	normalize_test_tau(sample);
 	// measures::stop_timer("tau_normalization");
-    std::cout << label << " (time): " << measures::get_timer("tau_normalization") << " ms\n";
+    std::cout << "\n " << label << "\n";
 	std::cout << "------------------------------------------------------------------------------------------\n";
-	std::cout << label << " (counters): ";
+	std::cout << " (time): " << measures::get_timer("tau_normalization") << " ms\n";
+	std::cout << " (rules):";
 	#ifdef TAU_MEASURE
 	if (measures::rule_counters<nso<tau_ba<bdd_test>, bdd_test>>.empty()) {
 		std::cout << "n/a\n";
@@ -61,10 +62,29 @@ int execute_benchmark(const char* label, const char* sample) {
 		using rules_counters = vector<std::pair<rule<nso<tau_ba<bdd_test>, bdd_test>>, size_t>>;
 		rules_counters counters(measures::rule_counters<nso<tau_ba<bdd_test>, bdd_test>>.begin(),
 			measures::rule_counters<nso<tau_ba<bdd_test>, bdd_test>>.end());
-		int width = std::floor(std::log10(counters[0].second)) + 1;
+		int width = std::floor(std::log10(counters[0].second)) + 2;
+		std::cout << "\t" << std::setw(width) << "uses"
+			<< std::setw(width) << "hits"
+			<< std::setw(7) << "ratio"
+			<< "  rule\n";
 		std::sort(counters.begin(), counters.end(),	[](auto a, auto b) { return a.second > b.second; });
-		for (auto [rule, counter] : counters)
-			std::cout << std::setw(width) << counter << " " << rule.first << ":=" << rule.second << "\n";
+		size_t total_counters = 0, total_hits = 0;
+		for (auto [rule, counter] : counters) {
+			double ratio = measures::rule_hits<nso<tau_ba<bdd_test>, bdd_test>>[rule] * 100 / (double)counter;
+			std::cout << "\t" << std::setw(width) << counter
+				<< std::setw(width) << measures::rule_hits<nso<tau_ba<bdd_test>, bdd_test>>[rule]
+				<< std::setw(7) << std::fixed << std::setprecision(2) << ratio << "%"
+				<< " " << rule.first << ":=" << rule.second << "\n";
+			total_counters += counter;
+			total_hits += measures::rule_hits<nso<tau_ba<bdd_test>, bdd_test>>[rule];
+		}
+		double total_ratio = total_hits * 100 / (double)total_counters;
+		std::cout << "\n";
+		std::cout << "\t" << std::setw(width) << total_counters
+			<< std::setw(width) << total_hits
+			<< std::setw(7) << std::fixed << std::setprecision(2) << total_ratio << "%"
+			<< " totals\n";
+
 	}
 	#else
 	std::cout << "n/a\n";
