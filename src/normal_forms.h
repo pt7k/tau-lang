@@ -217,7 +217,7 @@ static auto to_dnf_bf = make_library<BAs...>(
 template<typename... BAs>
 static auto nnf_to_dnf_wff = make_library<BAs...>(
 	WFF_TO_DNF_0
-	+ WFF_TO_DNF_1,
+	+ WFF_TO_DNF_1
 	+ WFF_PUSH_SOMETIMES_INWARDS,
 	{ nso_tag::is_dnf_wff }
 );
