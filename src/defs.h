@@ -18,8 +18,8 @@ typedef int sym_t;
 
 // basic macro for conditional execution of code
 #ifdef DEBUG
-#define DBG(x) x
-#include <cxxabi.h>
+#	define DBG(x) x
+#	include <cxxabi.h>
 #else
 #define DBG(x)
 #endif
