@@ -49,8 +49,8 @@ template<typename... BAs>
 size_t digits(const sp_tau_node<tau_ba<BAs...>, BAs...>& n) {
 	return process_digits(n)
 		| only_child_extractor<tau_ba<BAs...>, BAs...>
-		| size_t_extractor<tau_ba<BAs...>, BAs...>
-		| optional_value_extractor<size_t>;
+		| long_extractor<tau_ba<BAs...>, BAs...>
+		| optional_value_extractor<long>;
 }
 
 template<typename... BAs>

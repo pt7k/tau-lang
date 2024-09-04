@@ -199,12 +199,12 @@ std::pair<size_t, std::vector<offset_t>> get_ref_info(
 		auto t = offset	| only_child_extractor<BAs...>
 				| non_terminal_extractor<BAs...>
 				| optional_value_extractor<size_t>;
-		int_t d = 0;
+		long d = 0;
 		if (t == tau_parser::num)
 			d = offset | tau_parser::num
 				| only_child_extractor<BAs...>
-				| size_t_extractor<BAs...>
-				| optional_value_extractor<size_t>;
+				| long_extractor<BAs...>
+				| optional_value_extractor<long>;
 		else if (t == tau_parser::capture)
 			d = rr_dict(make_string(
 				tau_node_terminal_extractor<BAs...>,
@@ -337,38 +337,54 @@ auto is_bf_same_to_any_of(nso<BAs...>& n, std::vector<nso<BAs...>>& previous) {
 }
 
 template <typename... BAs>
-size_t get_max_loopback_in_rr(const nso<BAs...>& form) {
-	size_t max = 0;
-	for (const auto& offset: select_top(form, is_non_terminal<tau_parser::offsets, BAs...>)) {
+long get_max_loopback_in_rr(const nso<BAs...>& form) {
+	long max = 0, min = 0;
+	for (const auto& offset: select_top(form, is_non_terminal<tau_parser::offset, BAs...>)) {
 		auto current = offset
-			| tau_parser::offset
-			| tau_parser::num
+			| tau_parser::integer
 			| only_child_extractor<BAs...>
 			| offset_extractor<BAs...>;
-		max = current.has_value() ? std::max(max, current.value()) : max;
+		if (auto num = offset
+					| tau_parser::num
+					| only_child_extractor<BAs...>
+					| offset_extractor<BAs...>;
+				num)
+			max = std::max(max, num.value());
+		else if (auto integer = offset
+					| tau_parser::shift
+					| tau_parser::integer
+					| only_child_extractor<BAs...>
+					| offset_extractor<BAs...>;
+				integer) {
+			if (integer.value() < 0) max = std::max(max, - integer.value());
+		}
 	}
 	return max;
 }
 
 template<typename... BAs>
-nso<BAs...> build_shift_from_shift(nso<BAs...> shift, size_t step) {
-	auto num = shift | tau_parser::num | optional_value_extractor<nso<BAs...>>;
-	auto offset = num | only_child_extractor<BAs...> | offset_extractor<BAs...> | optional_value_extractor<size_t>;
-	if (step == offset) return shift | tau_parser::capture | optional_value_extractor<nso<BAs...>>;
-	std::map<nso<BAs...>, nso<BAs...>> changes{{num, build_num<BAs...>(step - offset)}};
-	return replace<nso<BAs...>>(shift, changes);
+void update_shift_changes(nso<BAs...> shift, long step,
+		std::map<nso<BAs...>, nso<BAs...>>& changes) {
+	auto offset = shift
+		| tau_parser::integer
+		| only_child_extractor<BAs...>
+		| offset_extractor<BAs...>
+		| optional_value_extractor<long>;
+	auto capture = shift
+		| tau_parser::capture
+		| optional_value_extractor<nso<BAs...>>;
+	if (step == offset)	changes[shift] = capture;
+	changes[shift] = wrap( tau_parser::shift, capture, build_integer<BAs...>(step + offset));
 }
 
 template<typename... BAs>
-nso<BAs...> build_main_step(const nso<BAs...>& form, size_t step) {
+nso<BAs...> build_main_step(const nso<BAs...>& form, long step) {
 	std::map<nso<BAs...>, nso<BAs...>> changes;
 	for (const auto& offset : select_top(form,
 				is_non_terminal<tau_parser::offsets, BAs...>))
 	{
-		auto shift = offset | tau_parser::shift;
-		if (!shift.has_value()) continue;
-		auto nshift = build_shift_from_shift<BAs...>(shift.value(), step);
-		changes[shift.value()] = nshift;
+		if (auto shift = offset | tau_parser::shift; shift)
+			update_shift_changes<BAs...>(shift.value(), step, changes);
 	}
 	return replace<nso<BAs...>>(form, changes);
 }
@@ -406,16 +422,16 @@ nso<BAs...> bf_normalizer_with_rec_relation(const rr<nso<BAs...>> &bf) {
 
 // enumerates index in main with step i - used for finding a fixed point
 template <typename... BAs>
-nso<BAs...> build_enumerated_main_step(const nso<BAs...>& form, size_t i,
+nso<BAs...> build_enumerated_main_step(const nso<BAs...>& form, long i,
 	size_t offset_arity)
 {
 	auto r = form;
 	std::map<sp_tau_node<BAs...>, sp_tau_node<BAs...>> changes;
 	std::vector<sp_tau_node<BAs...>> ofs; // create offsets node
-	ofs.push_back(wrap<BAs...>(tau_parser::offset, build_num<BAs...>(i)));
+	ofs.push_back(wrap<BAs...>(tau_parser::offset, build_integer<BAs...>(i)));
 	for (size_t o = 1; o < offset_arity; ++o)
 		ofs.push_back(wrap<BAs...>(tau_parser::offset,
-							build_num<BAs...>(0)));
+							build_integer<BAs...>(0)));
 
 	// create enumerated replacement
 	auto ref = r | only_child_extractor<BAs...>
@@ -555,17 +571,17 @@ nso<BAs...> calculate_fixed_point(const rr<nso<BAs...>>& nso_rr,
 	nso<BAs...> current;
 	auto eos = "(I) -- End enumeration step";
 
-	size_t max_loopback = 0;
-	std::vector<size_t> loopbacks;
+	long max_loopback = 0;
+	std::vector<long> loopbacks;
 	for (const auto& r : nso_rr.rec_relations) {
-		size_t loopback = std::max(get_max_loopback_in_rr(r.first),
+		long loopback = std::max(get_max_loopback_in_rr(r.first),
 					get_max_loopback_in_rr(r.second));
 		loopbacks.push_back(loopback);
 		max_loopback = std::max(max_loopback, loopback);
 	}
 	BOOST_LOG_TRIVIAL(debug) << "(I) max loopback " << max_loopback;
 
-	for (size_t i = max_loopback; ; i++) {
+	for (long i = max_loopback; ; i++) {
 		current = build_enumerated_main_step<BAs...>(
 					form, i, offset_arity);
 		bool changed;

@@ -65,7 +65,7 @@ using sp_tau_source_node = sp_node<idni::lit<char, char>>;
 // node type for the tau language related programs, libraries and
 // specifications trees.
 template <typename... BAs>
-using tau_sym = std::variant<tau_source_sym, std::variant<BAs...>, size_t>;
+using tau_sym = std::variant<tau_source_sym, std::variant<BAs...>, long>;
 
 template <typename... BAs>
 using sp_tau_node = sp_node<tau_sym<BAs...>>;
@@ -497,43 +497,45 @@ std::optional<size_t> operator|(const sp_tau_node<BAs...>& o,
 
 // returns an optional containing size_t of the node if possible
 template <typename... BAs>
-static const auto size_t_extractor = [](const sp_tau_node<BAs...>& n)
-	-> std::optional<size_t>
+static const auto long_extractor = [](const sp_tau_node<BAs...>& n)
+	-> std::optional<long>
 {
-	if (std::holds_alternative<size_t>(n->value))
-		return std::optional<size_t>(std::get<size_t>(n->value));
-	return std::optional<size_t>();
+	if (std::holds_alternative<long>(n->value))
+		return std::optional<long>(std::get<long>(n->value));
+	return std::optional<long>();
 };
+
 template<typename... BAs>
-using size_t_extractor_t = decltype(size_t_extractor<BAs...>);
+using long_extractor_t = decltype(long_extractor<BAs...>);
 
 template <typename... BAs>
 std::vector<sp_tau_node<BAs...>> operator||(
 	const std::vector<sp_tau_node<BAs...>>& v,
-	const size_t_extractor_t<BAs...> e)
+	const long_extractor_t<BAs...> e)
 {
 	return v | std::ranges::views::transform(e);
 }
 
 template <typename... BAs>
-std::optional<size_t> operator|(const std::optional<sp_tau_node<BAs...>>& o,
-	const size_t_extractor_t<BAs...> e)
+std::optional<long> operator|(const std::optional<sp_tau_node<BAs...>>& o,
+	const long_extractor_t<BAs...> e)
 {
-	return o.has_value() ? e(o.value()) : std::optional<size_t>();
+	return o.has_value() ? e(o.value()) : std::optional<long>();
 }
 
 template <typename... BAs>
 std::optional<size_t> operator|(const sp_tau_node<BAs...>& o,
-	const size_t_extractor_t<BAs...> e)
+	const long_extractor_t<BAs...> e)
 {
 	return e(o);
 }
 
 // returns an optional containing the offset of the node if possible
 template <typename...BAs>
-static const auto& offset_extractor = size_t_extractor<BAs...>;
+static const auto& offset_extractor = long_extractor<BAs...>;
+
 template <typename...BAs>
-using offset_extractor_t = size_t_extractor_t<BAs...>;
+using offset_extractor_t = long_extractor_t<BAs...>;
 
 // returns an optional containing the bas... of the node if possible
 template<typename... BAs>
@@ -1087,19 +1089,32 @@ sp_tau_source_node make_tau_source(std::istream& is,
 sp_tau_source_node make_tau_source_from_file(const std::string& filename,
 	idni::parser<>::parse_options options = {});
 
+// TODO (MEDIUM) have proper separation between declarationos and definitions
+template<typename... BAs>
+nso<BAs...> build_num(long value);
+template<typename... BAs>
+nso<BAs...> build_integer(long value);
+
 template<typename...BAs>
 sp_tau_node<BAs...> process_digits(const sp_tau_node<BAs...>& tau_source) {
 	std::map<sp_tau_node<BAs...>, sp_tau_node<BAs...>> changes;
-	for(auto& n: select_top(tau_source,
-		is_non_terminal<tau_parser::digits, BAs...>))
-	{
+	auto is_number = [](const sp_tau_node<BAs...>& n) -> bool{
+		return is_non_terminal<tau_parser::integer, BAs...>(n)
+			|| is_non_terminal<tau_parser::num, BAs...>(n);};
+	for(auto& n: select_top(tau_source, is_number))	{
 		auto offset = make_string<
 				tau_node_terminal_extractor_t<BAs...>,
 				sp_tau_node<BAs...>>(
 			tau_node_terminal_extractor<BAs...>,  n);
-		auto num = std::stoul(offset);
-		auto nn = make_node<tau_sym<BAs...>>(tau_sym<BAs...>(num), {});
-		changes[n] = nn;
+		long number = (n | tau_parser::negative).has_value()
+			? -std::stol(offset)
+			: std::stol(offset);
+//		if (is_non_terminal<tau_parser::num, BAs...>(n))
+//			changes[n] = build_num(number);
+//		else if (is_non_terminal<tau_parser::integer, BAs...>(n))
+//			changes[n] = build_integer(number);
+		changes[n] = is_non_terminal<tau_parser::num, BAs...>(n)
+			? build_num<BAs...>(number) : build_integer<BAs...>(number);
 	}
 	return replace<sp_tau_node<BAs...>>(tau_source, changes);
 }
@@ -1769,9 +1784,51 @@ template<typename... BAs>
 static const sp_tau_node<BAs...> _T_trimmed = trim(_T<BAs...>);
 
 template<typename... BAs>
-nso<BAs...> build_num(size_t value) {
+nso<BAs...> build_num(long value) {
 	return wrap(tau_parser::num,
 		make_node<tau_sym<BAs...>>(tau_sym<BAs...>(value), {}));
+}
+
+template<typename... BAs>
+nso<BAs...> build_integer(long value) {
+	return wrap ( tau_parser::integer,
+		make_node<tau_sym<BAs...>>(tau_sym<BAs...>(value), {}));
+}
+
+template<typename... BAs>
+sp_tau_node<BAs...> build_flag_neq(const sp_tau_node<BAs...> l, const sp_tau_node<BAs...> r) {
+	return wrap(tau_parser::flag,
+		wrap(tau_parser::flag_neq, l, r));
+}
+
+template<typename... BAs>
+sp_tau_node<BAs...> build_flag_eq(const sp_tau_node<BAs...> l, const sp_tau_node<BAs...> r) {
+	return wrap(tau_parser::flag,
+		wrap(tau_parser::flag_eq, l, r));
+}
+
+template<typename... BAs>
+sp_tau_node<BAs...> build_flag_less_equal(const sp_tau_node<BAs...> l, const sp_tau_node<BAs...> r) {
+	return wrap(tau_parser::flag,
+		wrap(tau_parser::flag_less_equal, l, r));
+}
+
+template<typename... BAs>
+sp_tau_node<BAs...> build_flag_less(const sp_tau_node<BAs...> l, const sp_tau_node<BAs...> r) {
+	return wrap(tau_parser::flag,
+		wrap(tau_parser::flag_less, l, r));
+}
+
+template<typename... BAs>
+sp_tau_node<BAs...> build_flag_greater(const sp_tau_node<BAs...> l, const sp_tau_node<BAs...> r) {
+	return wrap(tau_parser::flag,
+		wrap(tau_parser::flag_greater, l, r));
+}
+
+template<typename... BAs>
+sp_tau_node<BAs...> build_flag_greater_equal(const sp_tau_node<BAs...> l, const sp_tau_node<BAs...> r) {
+	return wrap(tau_parser::flag,
+		wrap(tau_parser::flag_greater_equal, l, r));
 }
 
 template<typename... BAs>
@@ -2668,27 +2725,6 @@ nso<BAs...> nso_rr_apply(const rule<nso<BAs...>>& r, const nso<BAs...>& n) {
 		}
 	}
 
-	// apply numerical simplifications
-	auto pred = is_non_terminal<BAs...>(tau_parser::shift);
-	if (auto shifts = select_all(nn, pred); !shifts.empty())
-		for (auto& shift : shifts)
-	{
-		auto args = shift || tau_parser::num;
-		if (args.size() == 2) {
-			auto left  = args[0] | only_child_extractor<BAs...>
-				| offset_extractor<BAs...>
-				| optional_value_extractor<size_t>;
-			auto right = args[1] | only_child_extractor<BAs...>
-				| offset_extractor<BAs...>
-				| optional_value_extractor<size_t>;
-			if (left < right) {
-				BOOST_LOG_TRIVIAL(debug) << "(T) " << n;
-				return n;
-			}
-			changes[shift] = build_num<BAs...>(left-right);
-		}
-	}
-
 	// apply the changes and print info
 	if (!changes.empty()) {
 		auto cnn = replace<nso<BAs...>>(nn, changes);
@@ -2884,6 +2920,37 @@ sp_tau_node<BAs...> make_node_hook_cte_neg(const node<tau_sym<BAs...>>& n) {
 		: std::make_shared<node<tau_sym<BAs...>>>(n);
 }
 
+template<typename...BAs>
+sp_tau_node<BAs...> make_node_hook_flag_neg(const node<tau_sym<BAs...>>& n) {
+	auto op = first_argument_expression(n)
+		| non_terminal_extractor<BAs...>
+		| optional_value_extractor<size_t>;
+	auto l = first_argument_expression(n)->child[0];
+	auto r = first_argument_expression(n)->child[1];
+	switch (op) {
+		//RULE(BF_PUSH_NEGATION_INWARDS_2, "($X != $Y)' := $X = $Y.")
+		case tau_parser::flag_neq:
+			return build_flag_eq<BAs...>(l, r);
+		//RULE(BF_PUSH_NEGATION_INWARDS_3, "($X = $Y)' := $X != $Y.")
+		case tau_parser::flag_eq:
+			return build_flag_neq<BAs...>(l, r);
+		//RULE(BF_PUSH_NEGATION_INWARDS_4, "($X >= $Y)' := $X < $Y.")
+		case tau_parser::flag_greater_equal:
+			return build_flag_less<BAs...>(l, r);
+		//RULE(BF_PUSH_NEGATION_INWARDS_5, "($X > $Y)' := $X <= $Y.")
+		case tau_parser::flag_greater:
+			return build_flag_less_equal<BAs...>(l, r);
+		//RULE(BF_PUSH_NEGATION_INWARDS_6, "($X <= $Y)' := $X > $Y.")
+		case tau_parser::flag_less_equal:
+			return build_flag_greater<BAs...>(l, r);
+		//RULE(BF_PUSH_NEGATION_INWARDS_7, "($X < $Y)' := $X >= $Y.")
+		case tau_parser::flag_less:
+			return build_flag_greater_equal<BAs...>(l, r);
+	}
+	// IDEA it should never happen, maybe throw an exception
+	return std::make_shared<node<tau_sym<BAs...>>>(n);
+}
+
 template<typename... BAs>
 sp_tau_node<BAs...> make_node_hook_bf_neg(const node<tau_sym<BAs...>>& n) {
 	//RULE(BF_SIMPLIFY_ONE_4, "1' := 0.")
@@ -2901,6 +2968,14 @@ sp_tau_node<BAs...> make_node_hook_bf_neg(const node<tau_sym<BAs...>>& n) {
 	//RULE(BF_CALLBACK_NEG, "{ $X }' := bf_neg_cb $X.")
 	if (is_non_terminal<tau_parser::bf_constant>(first_argument_expression(n)))
 		return make_node_hook_cte_neg(n);
+	//RULE(BF_PUSH_NEGATION_INWARDS_2, "($X != $Y)' := $X = $Y.")
+	//RULE(BF_PUSH_NEGATION_INWARDS_3, "($X = $Y)' := $X != $Y.")
+	//RULE(BF_PUSH_NEGATION_INWARDS_4, "($X >= $Y)' := $X < $Y.")
+	//RULE(BF_PUSH_NEGATION_INWARDS_5, "($X > $Y)' := $X <= $Y.")
+	//RULE(BF_PUSH_NEGATION_INWARDS_6, "($X <= $Y)' := $X > $Y.")
+	//RULE(BF_PUSH_NEGATION_INWARDS_7, "($X < $Y)' := $X >= $Y.")
+	if (is_non_terminal<tau_parser::flag>(first_argument_expression(n)))
+		return make_node_hook_flag_neg(n);
 	return std::make_shared<node<tau_sym<BAs...>>>(n);
 }
 
@@ -2985,7 +3060,6 @@ sp_tau_node<BAs...> make_node_hook_bf(const node<tau_sym<BAs...>>& n) {
 				return make_node_hook_bf_xor<BAs...>(n);
 			case tau_parser::bf_constant:
 				return make_node_hook_cte<BAs...>(n);
-			default: return std::make_shared<node<tau_sym<BAs...>>>(n);
 		}
 	return std::make_shared<node<tau_sym<BAs...>>>(n);
 }
@@ -3149,10 +3223,12 @@ sp_tau_node<BAs...> make_node_hook_wff_sometimes(const node<tau_sym<BAs...>>& n)
 	if (is_non_terminal<tau_parser::bf_f>(first_argument_expression(n)))
 		return _F<BAs...>;
 	//RULE(WFF_SIMPLIFY_SOMETIMES_1,  "sometimes sometimes $X ::= sometimes $X.")
-	if (auto double_quantifier = first_argument_formula(n) | tau_parser::wff_sometimes; double_quantifier)
+	if (auto double_quantifier = first_argument_formula(n)
+			| tau_parser::wff_sometimes; double_quantifier)
 		return first_argument_formula(n);
 	//RULE(WFF_SIMPLIFY_SOMETIMES_2,  "sometimes always $X ::= always $X.")
-	if (auto double_quantifier = first_argument_formula(n) | tau_parser::wff_always;	double_quantifier)
+	if (auto double_quantifier = first_argument_formula(n)
+			| tau_parser::wff_always;	double_quantifier)
 		return first_argument_formula(n);
 	return std::make_shared<node<tau_sym<BAs...>>>(n);
 }
@@ -3368,18 +3444,29 @@ sp_tau_node<BAs...> make_node_hook_wff(const node<tau_sym<BAs...>>& n) {
 	}
 }
 
+template<typename... BAs>
+sp_tau_node<BAs...> make_node_hook_shift(const node<tau_sym<BAs...>>& n) {
+	auto args = n || tau_parser::integer;
+	if (args.size() == 2) {
+		auto left  = args[0] | only_child_extractor<BAs...>
+			| offset_extractor<BAs...>
+			| optional_value_extractor<long>;
+		auto right = args[1] | only_child_extractor<BAs...>
+			| offset_extractor<BAs...>
+			| optional_value_extractor<long>;
+		if (left >= -right) build_integer<BAs...>(left - right);
+	}
+	return std::make_shared<node<tau_sym<BAs...>>>(n);
+}
+
 template <typename...BAs>
 struct make_tau_node {
 	std::optional<sp_tau_node<BAs...>> operator()(const node<tau_sym<BAs...>>& n) {
 		if (is_non_terminal_node<BAs...>(n)) {
 			switch (get_non_terminal_node(n)) {
-				case tau_parser::bf: {
-					return make_node_hook_bf<BAs...>(n);
-				}
-				case tau_parser::wff: {
-					return make_node_hook_wff<BAs...>(n);
-				}
-				default: return std::optional<sp_tau_node<BAs...>>();
+				case tau_parser::bf: return make_node_hook_bf<BAs...>(n);
+				case tau_parser::wff: return make_node_hook_wff<BAs...>(n);
+				case tau_parser::shift: return make_node_hook_shift<BAs...>(n);
 			}
 		}
 		return std::optional<sp_tau_node<BAs...>>();
@@ -3752,7 +3839,7 @@ std::ostream& pp(std::ostream& stream, const idni::tau::sp_tau_node<BAs...>& n,
 			} break;
 			case tau_parser::shift:
 				if (ch.size() == 1) pass();
-				else infix_nows("-");
+				//else infix_nows("-");
 				break;
 			case tau_parser::source_binding: infix(":"); break;
 			// nodes to wrap

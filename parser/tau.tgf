@@ -104,8 +104,11 @@ q_var                  => capture | variable.
 # offsets
 offsets                => '[' _ offset (_ ',' _ offset)* _ ']'.
 offset                 => num | capture | shift | (variable & ~io_var).
-shift                  => (capture | (variable & ~io_var)) _ '-' _ num.
+shift                  => (capture | (variable & ~io_var)) _ integer.
 num                    => digits.
+integer                => positive | negative.
+positive               => '+' _ digits.
+negative               => '-' _ digits.
 
 # constants
 uninterpreted_constant => '<' ((chars | _ ) ':' chars):uninter_const_name _ '>'.

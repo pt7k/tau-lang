@@ -469,7 +469,7 @@ gssotc<BAs...> get_loopback_adjusted_nso(const gssotc<BAs...>& positive, size_t 
 			auto val = num
 				| only_child_extractor<tau_ba<BAs...>, BAs...>
 				| offset_extractor<tau_ba<BAs...>, BAs...>
-				| optional_value_extractor<size_t>;
+				| optional_value_extractor<long>;
 			auto nval = loopback + 1 - val;
 			auto nnum = build_num_from_num<tau_ba<BAs...>, BAs...>(shift.value(), nval);
 			changes[shift.value()] = nnum;
