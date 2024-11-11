@@ -295,11 +295,17 @@ TEST_SUITE("minterm_inequality_system_range") {
 TEST_SUITE("find_solution") {
 
 	bool test_find_solution(const char* src) {
+		bdd_init<Bool>();
 		#ifdef DEBUG
 		std::cout << "------------------------------------------------------\n";
 		#endif // DEBUG
 		auto equation = bdd_make_nso(src);
-		auto solution = find_solution(equation);
+		solver_options<bdd_binding> options {
+			.splitter_one = nso_factory<bdd_binding>::instance().splitter_one(),
+			.has_model = has_model_variables<bdd_binding>,
+			.is_variable = is_bf_variable<bdd_binding>
+		};
+		auto solution = find_solution(equation, options);
 		return ( check_solution(equation, solution.value()));
 	}
 
@@ -347,7 +353,12 @@ TEST_SUITE("lgrs") {
 		std::cout << "------------------------------------------------------\n";
 		#endif // DEBUG
 		auto equation = bdd_make_nso(src);
-		auto solution = lgrs(equation);
+		solver_options<bdd_binding> options {
+			.splitter_one = nso_factory<bdd_binding>::instance().splitter_one(),
+			.has_model = has_model_variables<bdd_binding>,
+			.is_variable = is_bf_variable<bdd_binding>
+		};
+		auto solution = lgrs(equation, options);
 		return ( check_solution(equation, solution.value()) );
 	}
 
@@ -372,7 +383,12 @@ TEST_SUITE("solve_minterm_system") {
 		minterm_system<bdd_binding> system;
 		for (const auto& minterm: minterms)
 			system.insert(bdd_make_nso(minterm));
-		auto solution = solve_minterm_system<bdd_binding>(system, splitter_one_bdd());
+		solver_options<bdd_binding> options {
+			.splitter_one = nso_factory<bdd_binding>::instance().splitter_one(),
+			.has_model = has_model_variables<bdd_binding>,
+			.is_variable = is_bf_variable<bdd_binding>
+		};
+		auto solution = solve_minterm_system<bdd_binding>(system, options);
 		bool check = true;
 		for (const auto& equation: system)
 			check = check ? check_solution(equation, solution.value()) : false;
@@ -403,7 +419,12 @@ TEST_SUITE("solve_inequality_system") {
 		for (const auto& inequality: inequalities) {
 			system.insert(bdd_make_nso(inequality));
 		}
-		auto solution = solve_inequality_system<bdd_binding>(system, splitter_one_bdd());
+		solver_options<bdd_binding> options {
+			.splitter_one = nso_factory<bdd_binding>::instance().splitter_one(),
+			.has_model = has_model_variables<bdd_binding>,
+			.is_variable = is_bf_variable<bdd_binding>
+		};
+		auto solution = solve_inequality_system<bdd_binding>(system, options);
 		bool check = true;
 		for (const auto& equation: system)
 			check = check ? check_solution(equation, solution.value()) : false;
@@ -482,7 +503,12 @@ TEST_SUITE("solve_system") {
 		if (equality.size() != 0) system.first = bdd_make_nso(equality);
 		for (const auto& inequality: inequalities)
 		system.second.insert(bdd_make_nso(inequality));
-		auto solution = solve_system<bdd_binding>(system, splitter_one_bdd());
+		solver_options<bdd_binding> options {
+			.splitter_one = nso_factory<bdd_binding>::instance().splitter_one(),
+			.has_model = has_model_variables<bdd_binding>,
+			.is_variable = is_bf_variable<bdd_binding>
+		};
+		auto solution = solve_system<bdd_binding>(system, options);
 		bool check = system.first
 			? check_solution(system.first.value(), solution.value())
 			: false;
