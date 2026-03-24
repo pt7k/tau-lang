@@ -506,6 +506,18 @@ tref repl_evaluator<BAs...>::make_cli(const std::string& src) {
 	filt.erase(remove_if(filt.begin(), filt.end(), [](unsigned char c) {
 		return c == 22;
 	}), filt.end());
+	// remove comments starting at the beginning of the line
+	std::string filt2 = "";
+	bool in_comment = false;
+	for (size_t idx = 0; idx < filt.length(); idx++) {
+		if (in_comment && (filt[idx] == '\n' || filt[idx] == '\r'))
+			in_comment = false;
+		else if (filt[idx] == '#' &&
+			(idx == 0 || filt[idx - 1] == '\n' || filt[idx - 1] == '\r'))
+			in_comment = true;
+		if (!in_comment) filt2 += filt[idx];
+	}
+	filt=filt2;
 	tau_parser::result result = tau_parser::instance()
 		.parse(filt.c_str(), filt.size(), {
 						.start = tau::cli });
